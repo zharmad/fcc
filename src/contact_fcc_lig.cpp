@@ -109,7 +109,9 @@ int main(int argc, char *argv[]) {
 	    (c1[i].y - c2[ii].y) * (c1[i].y - c2[ii].y) +
 	    (c1[i].z - c2[ii].z) * (c1[i].z - c2[ii].z);
 	   if (currdissq < cutoffsq) {
-	     printf ("%d%d%d%d\n", res[n].nr, res[n].seg, nn, res[nn].seg);
+             // ~~CONTACT_SYNTAX~~ Must synch with other *.c and *.py files.
+             printf ("%02d%02d%05d%05d\n", res[n].seg, res[nn].seg, res[n].nr, res[nn].nr);
+	     //printf ("%d%d%d%d\n", res[n].nr, res[n].seg, res[nn].nr, res[nn].seg);
 //	     printf ("%d %c %s %d %c %s %f\n", res[n].nr, res[n].seg, res[n].atom[i].c_str(), res[nn].nr, res[nn].seg, res[nn].atom[ii].c_str(), sqrt(currdissq));
 	   }
         }

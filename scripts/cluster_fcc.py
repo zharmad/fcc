@@ -8,6 +8,7 @@ Authors:
            RODRIGUES Joao
            TRELLET Mikael
            MELQUIOND Adrien
+           CHEN Po-chia
 """
 
 class Element(object):
@@ -72,7 +73,15 @@ class Cluster(object):
         l.append(element)
         element.assign_cluster(self.name)
 
-def read_matrix(path, cutoff, strictness):
+def debug_elements(elements):
+    for m in elements:
+        sys.stderr.write("element %d:" % m)
+        for n in elements[m].neighbors:
+            sys.stderr.write(" %d" % n.name)
+        sys.stderr.write("\n")
+    return
+
+def read_matrix(path, cutoff, strictness, bChainSymm=False):
     """ 
     Reads in a four column matrix (1 2 0.123 0.456\n) 
     and creates an dictionary of Elements.
@@ -81,6 +90,15 @@ def read_matrix(path, cutoff, strictness):
     to produce a new cutoff for the second half of the matrix. Used to
     allow some variability while keeping very small interfaces from clustering
     with anything remotely similar.
+    
+    bChainsymm triggers an alternate path that discovers the number of
+    images contained in the matrix file, and reads it accordingly.
+    All images satisfying the distance criterion will cause its *base* image
+    to be added as a neighbour.
+    
+    Essentially, fcc_(A,B) = math.max( fcc_(A,Bi) ), i across all images.
+    NB: Keeping the matrix file expanded allows the maintainer to debug things
+    before the information is thrown away.
     """
 
     cutoff = float(cutoff)
@@ -88,32 +106,68 @@ def read_matrix(path, cutoff, strictness):
     
     elements = {}
 
-    f = open(path, 'r')
-    for line in f:
-        ref, mobi, dRM, dMR = line.split()
-        ref = int(ref)
-        mobi = int(mobi)
-        dRM = float(dRM)
-        dMR = float(dMR)
+    if bChainSymm==False:
+        #Original path without symmetry.
+        f = open(path, 'r')
+        for line in f:
+            ref, mobi, dRM, dMR = line.split()
+            ref = int(ref)
+            mobi = int(mobi)
+            dRM = float(dRM)
+            dMR = float(dMR)
 
-        # Create or Retrieve Elements
-        if ref not in elements:
-            r = Element(ref)
-            elements[ref] = r
-        else:
+            # Create or Retrieve Elements
+            if ref not in elements:
+                r = Element(ref)
+                elements[ref] = r
+            else:
+                r = elements[ref]
+
+            if mobi not in elements:
+                m = Element(mobi)
+                elements[mobi] = m
+            else:
+                m = elements[mobi]    
+
+            # Assign neighbors
+            if dRM >= cutoff and dMR >= partner_cutoff:
+                r.add_neighbor(m)
+            if dMR >= cutoff and dRM >= partner_cutoff:
+                m.add_neighbor(r)
+    else:
+        #New path involving symmetry checks.
+        f = open(path,'r')
+        for line in f:
+            pass
+        last=line.split()
+        n_conf=int(last[0])
+        # ~~ TAG: TO_DO ~~
+        # Report image so that PDB files can be re-arranged later.
+        n_mirror=int(last[1])/n_conf
+        sys.stderr.write("Found %d conformers with %d images each.\n" % (n_conf, n_mirror))
+
+        #Pre-create all base elements
+        for i in xrange(n_conf):
+            m = Element(i+1)
+            elements[i+1]=m
+
+        f.seek(0)
+        for line in f:
+            ref, mobi, dRM, dMR = line.split()
+            ref = int(ref)
+            # Take base image as target. ;)
+            mobi = (int(mobi)-1) % n_conf + 1
+            if ref == mobi:
+                continue
+            dRM = float(dRM)
+            dMR = float(dMR)
             r = elements[ref]
-        
-        if mobi not in elements:
-            m = Element(mobi)
-            elements[mobi] = m
-        else:
-            m = elements[mobi]    
-
-        # Assign neighbors
-        if dRM >= cutoff and dMR >= partner_cutoff:
-            r.add_neighbor(m)
-        if dMR >= cutoff and dRM >= partner_cutoff:
-            m.add_neighbor(r)
+            m = elements[mobi]
+            # Assign neighbors, python set does not need to worry about duplicates.
+            if dRM >= cutoff and dMR >= partner_cutoff:
+                r.add_neighbor(m)
+            if dMR >= cutoff and dRM >= partner_cutoff:
+                m.add_neighbor(r)        
 
     f.close()
 
@@ -198,6 +252,10 @@ if __name__ == "__main__":
     parser.add_option('-s', '--strictness', dest="strictness", action="store", type='float',
                     default=0.75,
                     help="Multiplier for cutoff for M->R inclusion threshold. [0.75 or effective cutoff of 0.5625]")
+    parser.add_option('-m', '--map_has_symmetry', dest="bChainSymm", action='store_true',
+                    default=False,
+                    help='Input matrix accounts for chain symmetry, based on ./calc_fcc_matrix.py, and'
+                         'is of form (N_contacts)x(N_contacts*N_permtutaions).')
 
 
     (options, args) = parser.parse_args()
@@ -219,7 +277,7 @@ if __name__ == "__main__":
     t_init = time()
 
     try:
-        pool = read_matrix(fmatrix, cutoff, options.strictness)
+        pool = read_matrix(fmatrix, cutoff, options.strictness, options.bChainSymm)
     except IOError:
         sys.stderr.write("File not found: %s\n" %fmatrix)
         sys.exit(1)
